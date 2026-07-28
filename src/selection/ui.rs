@@ -144,8 +144,12 @@ impl SelectionUI {
 		};
 
 		event_queue.roundtrip(&mut app)?;
+		// Second roundtrip to ensure SCTK has received output names/properties
+		// from the compositor (e.g. wl_output.name, xdg_output.name) before
+		// we try to match outputs by name below.
+		event_queue.roundtrip(&mut app)?;
 
-		for (info, img) in self.outputs.iter() {
+		for (i, (info, img)) in self.outputs.iter().enumerate() {
 			let (w, h) = (info.logical_size.width, info.logical_size.height);
 
 			let cached_bg = image_to_cairo_surface(img)?;
@@ -171,7 +175,7 @@ impl SelectionUI {
 					let info_name = app.output_state.info(o).and_then(|i| i.name);
 					info_name.as_deref() == Some(&info.name)
 				})
-				.or_else(|| app.output_state.outputs().next())
+				.or_else(|| app.output_state.outputs().nth(i))
 				.ok_or_else(|| anyhow::anyhow!("compositor reported no outputs"))?;
 
 			let wl_surface = app.compositor_state.create_surface(&qh);
@@ -199,6 +203,7 @@ impl SelectionUI {
 				wl_surface,
 				dimensions: (w, h),
 				slot: None,
+				old_buffers: Vec::new(),
 				waiting_for_frame: false,
 			});
 		}

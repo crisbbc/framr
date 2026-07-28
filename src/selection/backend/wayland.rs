@@ -49,6 +49,10 @@ pub struct SurfaceData {
 	pub wl_surface: WlSurface,
 	pub dimensions: (u32, u32),
 	pub slot: Option<Buffer>,
+	/// Retain old buffers until the compositor has acknowledged the
+	/// current frame, preventing the SlotPool from reusing memory
+	/// that the compositor is still reading from.
+	pub old_buffers: Vec<Buffer>,
 	pub waiting_for_frame: bool,
 }
 
@@ -97,12 +101,17 @@ impl AppState {
 			let cr = Context::new(&surface_data.scratch)
 				.map_err(|e| anyhow!("failed to create context: {}", e))?;
 
+			// Use Operator::Source to fully replace pixels, avoiding alpha
+			// blending feedback that causes the screen to "juggle" on every
+			// frame when the scratch surface is reused.
+			cr.set_operator(cairo::Operator::Source);
 			if let Err(e) = cr.set_source_surface(&surface_data.cached_bg, 0.0, 0.0) {
 				eprintln!("failed to set source surface: {}", e);
 			}
 			if let Err(e) = cr.paint() {
 				eprintln!("failed to paint: {}", e);
 			}
+			cr.set_operator(cairo::Operator::Over);
 
 			for (idx, ann) in state.annotations.iter().enumerate() {
 				ann.tool
@@ -267,6 +276,16 @@ impl AppState {
 
 		surface_data.wl_surface.commit();
 
+		// Move previous buffer to old_buffers instead of dropping it,
+		// so the SlotPool won't reclaim its memory while the compositor
+		// may still be reading from it for the previous frame.
+		if let Some(old) = surface_data.slot.take() {
+			surface_data.old_buffers.push(old);
+			// Cap to prevent unbounded growth if frame callbacks stall
+			while surface_data.old_buffers.len() > 5 {
+				surface_data.old_buffers.remove(0);
+			}
+		}
 		surface_data.slot = Some(buffer);
 		Ok(())
 	}
@@ -599,6 +618,9 @@ impl smithay_client_toolkit::compositor::CompositorHandler for AppState {
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
         if let Some(sd) = self.surfaces.iter_mut().find(|s| &s.wl_surface == surface) {
             sd.waiting_for_frame = false;
+            // The compositor has acknowledged the latest frame;
+            // old buffers are now safe to release.
+            sd.old_buffers.clear();
         }
     }
     fn transform_changed(&mut self,_: &Connection,_: &QueueHandle<Self>,_: &WlSurface,_: wayland_client::protocol::wl_output::Transform) {}

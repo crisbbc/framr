@@ -3,7 +3,7 @@ mod record;
 use crate::RecordingConfig;
 use crate::backend::{CaptureBackend, RecordingHandle};
 use crate::convert::convert_to_rgba;
-use crate::output::{LogicalRegion, OutputInfo, PixelFormat};
+use crate::output::{FrameFormat, LogicalRegion, OutputInfo, PixelFormat};
 use anyhow::{Result, anyhow};
 use dbus::arg::{self, RefArg};
 use dbus::blocking::SyncConnection;
@@ -117,7 +117,13 @@ impl KdeBackend {
 			raw = packed_raw;
 		}
 
-		convert_to_rgba(&mut raw, pixel_format)
+		let frame_format = FrameFormat {
+			format: pixel_format,
+			width: width as i32,
+			height: height as i32,
+			stride: width as i32 * 4,
+		};
+		convert_to_rgba(&mut raw, &frame_format)
 			.ok_or_else(|| anyhow!("Failed to convert pixel format"))?;
 
 		ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, raw)

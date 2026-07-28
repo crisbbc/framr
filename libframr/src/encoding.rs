@@ -150,8 +150,18 @@ fn gst_video_format(format: PixelFormat) -> Result<gstreamer_video::VideoFormat>
 	}
 }
 
-fn push_buffer(appsrc: &AppSrc, data: &[u8], pts: u64, previous_pts: Option<u64>) -> Result<()> {
-	let mut buffer = gstreamer::Buffer::with_size(data.len())
+fn push_buffer(
+	appsrc: &AppSrc,
+	data: &[u8],
+	pts: u64,
+	previous_pts: Option<u64>,
+	frame_format: &FrameFormat,
+) -> Result<()> {
+	let row_bytes = (frame_format.width * 4) as usize;
+	let packed_size = row_bytes * frame_format.height as usize;
+	let stride = frame_format.stride as usize;
+
+	let mut buffer = gstreamer::Buffer::with_size(packed_size)
 		.map_err(|_| anyhow::anyhow!("Failed to create buffer"))?;
 
 	{
@@ -165,9 +175,21 @@ fn push_buffer(appsrc: &AppSrc, data: &[u8], pts: u64, previous_pts: Option<u64>
 			}
 		}
 
-		buffer_mut
-			.copy_from_slice(0, data)
-			.map_err(|e| anyhow::anyhow!("copy_from_slice failed: {e}"))?;
+		if row_bytes == stride {
+			// Fast path: tightly packed, no padding
+			buffer_mut
+				.copy_from_slice(0, &data[..packed_size])
+				.map_err(|e| anyhow::anyhow!("copy_from_slice failed: {e}"))?;
+		} else {
+			// Slow path: strip row padding
+			for y in 0..frame_format.height as usize {
+				let src_start = y * stride;
+				let dst_start = y * row_bytes;
+				buffer_mut
+					.copy_from_slice(dst_start, &data[src_start..src_start + row_bytes])
+					.map_err(|e| anyhow::anyhow!("copy_from_slice failed: {e}"))?;
+			}
+		}
 	}
 
 	appsrc.push_buffer(buffer)?;
@@ -255,8 +277,7 @@ pub fn run_single_encoding_pipeline(
 		.framerate(gstreamer::Fraction::new(recording_config.fps as i32, 1))
 		.build();
 
-	appsrc.set_caps(Some(&caps));
-	appsrc.set_max_bytes(format.byte_size() as u64 * 4);
+	appsrc.set_caps(Some(&caps));		appsrc.set_max_bytes((format.width * format.height * 4) as u64 * 4);
 
 	let (target_width, target_height) =
 		fit_encoder_dimensions(&encoder, format.width, format.height);
@@ -270,8 +291,8 @@ pub fn run_single_encoding_pipeline(
 
 	let mut previous_pts = None;
 
-	while let Ok((mmap, buffer_idx, pts, _format)) = frame_receiver.recv() {
-		push_buffer(&appsrc, &mmap, pts, previous_pts)?;
+	while let Ok((mmap, buffer_idx, pts, format)) = frame_receiver.recv() {
+		push_buffer(&appsrc, &mmap, pts, previous_pts, &format)?;
 		let _ = return_sender.send(buffer_idx);
 		previous_pts = Some(pts);
 	}
@@ -465,10 +486,9 @@ pub fn run_composite_encoding_pipeline(
 			.framerate(gstreamer::Fraction::new(recording_config.fps as i32, 1))
 			.build();
 
-		appsrcs[i].0.set_caps(Some(&caps));
-		appsrcs[i]
-			.0
-			.set_max_bytes(frame_format.byte_size() as u64 * 4);
+		appsrcs[i].0.set_caps(Some(&caps));			appsrcs[i]
+				.0
+				.set_max_bytes((frame_format.width * frame_format.height * 4) as u64 * 4);
 	}
 
 	pipeline.set_state(gstreamer::State::Playing)?;
@@ -491,12 +511,12 @@ pub fn run_composite_encoding_pipeline(
 			break;
 		} else {
 			let i = index;
-			if let Ok((mmap, buffer_idx, pts, _frame_format)) = oper.recv(&frame_receivers[i]) {
+			if let Ok((mmap, buffer_idx, pts, frame_format)) = oper.recv(&frame_receivers[i]) {
 				let (appsrc, _) = &appsrcs[i];
 
 				let relative_pts = pts.saturating_sub(*start_pts.get_or_insert(pts));
 
-				push_buffer(appsrc, &mmap, relative_pts, previous_pts_vec[i])?;
+				push_buffer(appsrc, &mmap, relative_pts, previous_pts_vec[i], &frame_format)?;
 
 				let _ = return_senders[i].send(buffer_idx);
 

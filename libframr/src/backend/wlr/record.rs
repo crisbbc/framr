@@ -46,11 +46,18 @@ impl CaptureBackend for WlrBackend {
 
 		let mut raw: Vec<u8> = mmap.to_vec();
 
-		convert_to_rgba(&mut raw, frame_format.format)
+		convert_to_rgba(&mut raw, &frame_format)
 			.ok_or_else(|| anyhow::anyhow!("unsupported pixel format"))?;
 
 		let width = frame_format.width as u32;
 		let height = frame_format.height as u32;
+		let row_bytes = (width * 4) as usize;
+		if frame_format.stride as usize > row_bytes {
+			raw = raw
+				.chunks_exact(frame_format.stride as usize)
+				.flat_map(|row| row[..row_bytes].to_vec())
+				.collect();
+		}
 
 		let image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, raw)
 			.ok_or_else(|| anyhow::anyhow!("failed to create image buffer"))?;
@@ -133,11 +140,18 @@ impl CaptureBackend for WlrBackend {
 
 			let mut raw = mmap.to_vec();
 
-			convert_to_rgba(&mut raw, frame_format.format)
+			convert_to_rgba(&mut raw, frame_format)
 				.ok_or_else(|| anyhow::anyhow!("unsupported pixel format"))?;
 
 			let width = frame_format.width as u32;
 			let height = frame_format.height as u32;
+			let row_bytes = (width * 4) as usize;
+			if frame_format.stride as usize > row_bytes {
+				raw = raw
+					.chunks_exact(frame_format.stride as usize)
+					.flat_map(|row| row[..row_bytes].to_vec())
+					.collect();
+			}
 
 			let image = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(width, height, raw)
 				.ok_or_else(|| anyhow::anyhow!("failed to create image buffer"))?;
@@ -392,6 +406,7 @@ impl WlrBackend {
 				if f.format != frame_format.format
 					|| f.width != frame_format.width
 					|| f.height != frame_format.height
+					|| f.stride != frame_format.stride
 				{
 					return Err(FramrError::ResolutionChanged.into());
 				}

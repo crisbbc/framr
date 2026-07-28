@@ -151,10 +151,16 @@ impl SelectionUI {
 			let cached_bg = image_to_cairo_surface(img)?;
 			let cached_blurred_bg = cached_bg.clone();
 			let cached_pixelated_bg = cached_bg.clone();
-			let scratch = cairo::ImageSurface::create(
+			let w_i32 = info.logical_size.width as i32;
+		let h_i32 = info.logical_size.height as i32;
+		let scratch_stride = w_i32 * 4;
+		let scratch_data = vec![0u8; (scratch_stride * h_i32) as usize];
+		let scratch = cairo::ImageSurface::create_for_data(
+				scratch_data,
 				cairo::Format::ARgb32,
-				info.logical_size.width as i32,
-				info.logical_size.height as i32,
+				w_i32,
+				h_i32,
+				scratch_stride,
 			)
 			.map_err(|e| anyhow::anyhow!("failed to create scratch surface: {e}"))?;
 

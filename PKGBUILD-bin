@@ -25,7 +25,7 @@ package() {
     install -Dm644 "$srcdir/man"/*.1 -t "$pkgdir/usr/share/man/man1"
 
     cd "$srcdir/framr-$pkgver"
-    install -Dm644 "assets/framr-handler.desktop" "$pkgdir/usr/share/applications/framr-handler.desktop"
+    install -Dm644 "assets/framr.desktop" "$pkgdir/usr/share/applications/framr.desktop"
 
     if [ -f "LICENSE" ]; then
         install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

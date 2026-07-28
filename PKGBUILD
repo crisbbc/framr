@@ -27,7 +27,7 @@ build() {
 package() {
     cd "$srcdir/$pkgname-$pkgver"
     install -Dm755 "target/release/framr" "$pkgdir/usr/bin/framr"
-    install -Dm644 "assets/framr-handler.desktop" "$pkgdir/usr/share/applications/framr-handler.desktop"
+    install -Dm644 "assets/framr.desktop" "$pkgdir/usr/share/applications/framr.desktop"
 
     target/release/framr completions bash | install -Dm644 /dev/stdin "$pkgdir/usr/share/bash-completion/completions/framr"
     target/release/framr completions zsh | install -Dm644 /dev/stdin "$pkgdir/usr/share/zsh/site-functions/_framr"

@@ -5,7 +5,7 @@ pub mod macros;
 pub mod types;
 
 pub use cli_ui::*;
-pub use core::{load_config, load_uploader_config};
+pub use core::{load_config, load_uploader_config, save_config};
 pub use import::import_from_source;
 pub(crate) use types::{AppConfig, BodyType, Color, SelectionConfig, UploadConfig};
 pub use types::{DefaultAction, DefaultCaptureMethod};

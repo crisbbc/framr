@@ -53,7 +53,7 @@ in {
     ];
 
     xdg.mimeApps.defaultApplications = {
-      "x-scheme-handler/framr" = ["framr-handler.desktop"];
+      "x-scheme-handler/framr" = ["framr.desktop"];
     };
   };
 }

@@ -189,16 +189,14 @@ pub fn manage_kv_pairs(label: &str, pairs: &mut Vec<(String, String)>) -> Result
 	}
 	Ok(())
 }
-pub fn import_uploader(source: &str, silent: bool) -> Result<()> {
-	let mut cfg = load_config()?;
-
+pub fn import_uploader(cfg: &mut AppConfig, source: &str, silent: bool) -> Result<()> {
 	println!("{}", header("Import Uploader"));
 	println!("  {} {}", style("Source:").bold(), style(source).blue());
 
 	let mut uploader = super::import_from_source(source, false)?;
 
 	let original_name = uploader.name.clone();
-	uploader.name = ensure_unique_uploader_name(&cfg, uploader.name);
+	uploader.name = ensure_unique_uploader_name(cfg, uploader.name);
 
 	if uploader.name != original_name {
 		println!(
@@ -219,8 +217,6 @@ pub fn import_uploader(source: &str, silent: bool) -> Result<()> {
 
 	let notification_message = format!("Imported {}", uploader.name);
 	cfg.uploaders.push(uploader);
-	save_config(&cfg)?;
-	print_success("Configuration saved.");
 	let _ = send_notification("framr success", &notification_message, None, silent);
 	Ok(())
 }
@@ -307,38 +303,29 @@ pub fn show_uploader(name_or_index: &str) -> Result<()> {
 	Ok(())
 }
 
-pub fn create_uploader() -> Result<()> {
-	let mut cfg = load_config()?;
-	create_uploader_interactive(&mut cfg)?;
-	save_config(&cfg)?;
-	print_success("Configuration saved.");
+pub fn create_uploader(cfg: &mut AppConfig) -> Result<()> {
+	create_uploader_interactive(cfg)?;
 	Ok(())
 }
 
-pub fn edit_uploader(name_or_index: Option<&str>) -> Result<()> {
-	let mut cfg = load_config()?;
-
+pub fn edit_uploader(cfg: &mut AppConfig, name_or_index: Option<&str>) -> Result<()> {
 	if cfg.uploaders.is_empty() {
 		println!("\n{}", style("No uploaders to edit.").yellow());
 		return Ok(());
 	}
 
-	let idx = resolve_uploader_index(&cfg, name_or_index, "Select uploader to edit")?;
-	modify_uploader_at(&mut cfg, idx)?;
-	save_config(&cfg)?;
-	print_success("Configuration saved.");
+	let idx = resolve_uploader_index(cfg, name_or_index, "Select uploader to edit")?;
+	modify_uploader_at(cfg, idx)?;
 	Ok(())
 }
 
-pub fn delete_uploader(name_or_index: Option<&str>) -> Result<()> {
-	let mut cfg = load_config()?;
-
+pub fn delete_uploader(cfg: &mut AppConfig, name_or_index: Option<&str>) -> Result<()> {
 	if cfg.uploaders.is_empty() {
 		println!("\n{}", style("No uploaders to delete.").yellow());
 		return Ok(());
 	}
 
-	let idx = resolve_uploader_index(&cfg, name_or_index, "Select uploader to delete")?;
+	let idx = resolve_uploader_index(cfg, name_or_index, "Select uploader to delete")?;
 
 	let uploader_name = cfg.uploaders[idx].name.clone();
 	if super::prompt_confirm(
@@ -352,7 +339,6 @@ pub fn delete_uploader(name_or_index: Option<&str>) -> Result<()> {
 		if cfg.default_uploader.as_deref() == Some(&uploader_name) {
 			cfg.default_uploader = None;
 		}
-		save_config(&cfg)?;
 		print_error(&format!("Deleted \"{}\"", uploader_name));
 	} else {
 		println!("  {}", style("Cancelled.").dim());
@@ -606,7 +592,15 @@ pub fn register_protocol_handler() -> Result<()> {
 	let apps_dir = xdg_data_home.join("applications");
 	std::fs::create_dir_all(&apps_dir)?;
 
-	let desktop_file_path = apps_dir.join("framr-handler.desktop");
+	let desktop_file_path = apps_dir.join("framr.desktop");
+
+	// Clean up old handler name if it exists
+	let old_desktop_path = apps_dir.join("framr-handler.desktop");
+	if old_desktop_path.exists() {
+		if let Err(e) = std::fs::remove_file(&old_desktop_path) {
+			eprintln!("  Note: Could not remove old handler: {e}");
+		}
+	}
 
 	if desktop_file_path.exists() {
 		let proceed = super::prompt_confirm(
@@ -687,10 +681,10 @@ Comment=Handle framr:// deeplinks for importing uploaders
 }
 
 pub fn run_config_wizard() -> Result<()> {
-	let mut cfg = load_config()?;
 	let term = Term::stdout();
 
 	loop {
+		let mut cfg = load_config()?;
 		let _ = term.clear_screen();
 
 		println!("\n{}", style("Configuration Menu").cyan().bold());
@@ -769,19 +763,27 @@ pub fn run_config_wizard() -> Result<()> {
 		match selection {
 			0 => {
 				let source: String = super::prompt_input("Path to file or URL", None)?;
-				import_uploader(&source, true)?;
+				import_uploader(&mut cfg, &source, true)?;
+				save_config(&cfg)?;
+				print_success("Configuration saved.");
 				thread::sleep(Duration::from_secs(1));
 			}
 			1 => {
-				create_uploader()?;
+				create_uploader(&mut cfg)?;
+				save_config(&cfg)?;
+				print_success("Configuration saved.");
 				thread::sleep(Duration::from_secs(1));
 			}
 			2 => {
-				edit_uploader(None)?;
+				edit_uploader(&mut cfg, None)?;
+				save_config(&cfg)?;
+				print_success("Configuration saved.");
 				thread::sleep(Duration::from_secs(1));
 			}
 			3 => {
-				delete_uploader(None)?;
+				delete_uploader(&mut cfg, None)?;
+				save_config(&cfg)?;
+				print_success("Configuration saved.");
 				thread::sleep(Duration::from_secs(1));
 			}
 			4 => {
@@ -803,8 +805,7 @@ pub fn run_config_wizard() -> Result<()> {
 				thread::sleep(Duration::from_secs(1));
 			}
 			_ => {
-				save_config(&cfg)?;
-				print_success("Configuration saved. Exiting...");
+				print_success("Exiting...");
 				return Ok(());
 			}
 		}

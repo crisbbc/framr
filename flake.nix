@@ -77,7 +77,7 @@
 
             postInstall = ''
               ls -lha assets
-              install -Dm644 assets/framr-handler.desktop -t $out/share/applications
+              install -Dm644 assets/framr.desktop -t $out/share/applications
 
               installShellCompletion --cmd framr \
                 --bash <($out/bin/framr completions bash) \

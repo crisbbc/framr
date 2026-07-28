@@ -39,19 +39,35 @@ fn main() -> std::process::ExitCode {
 fn run(cli: Cli) -> Result<()> {
 	let cfg = config::load_config().ok();
 	if let Some(ref uri) = cli.uri {
-		return config::import_uploader(uri, cli.silent);
+		let mut cfg = config::load_config()?;
+		config::import_uploader(&mut cfg, uri, cli.silent)?;
+		return config::save_config(&cfg);
 	}
 
 	match cli.command {
 		Some(Commands::Config { action }) => {
 			return match action {
-				Some(ConfigAction::Import { source }) => config::import_uploader(&source, true),
+				Some(ConfigAction::Import { source }) => {
+					let mut cfg = config::load_config()?;
+					config::import_uploader(&mut cfg, &source, true)?;
+					config::save_config(&cfg)
+				}
 				Some(ConfigAction::List) => config::list_uploaders(),
 				Some(ConfigAction::Show { uploader }) => config::show_uploader(&uploader),
-				Some(ConfigAction::Create) => config::create_uploader(),
-				Some(ConfigAction::Edit { uploader }) => config::edit_uploader(uploader.as_deref()),
+				Some(ConfigAction::Create) => {
+					let mut cfg = config::load_config()?;
+					config::create_uploader(&mut cfg)?;
+					config::save_config(&cfg)
+				}
+				Some(ConfigAction::Edit { uploader }) => {
+					let mut cfg = config::load_config()?;
+					config::edit_uploader(&mut cfg, uploader.as_deref())?;
+					config::save_config(&cfg)
+				}
 				Some(ConfigAction::Delete { uploader }) => {
-					config::delete_uploader(uploader.as_deref())
+					let mut cfg = config::load_config()?;
+					config::delete_uploader(&mut cfg, uploader.as_deref())?;
+					config::save_config(&cfg)
 				}
 				Some(ConfigAction::Default { uploader }) => {
 					config::set_default_uploader(uploader.as_deref())

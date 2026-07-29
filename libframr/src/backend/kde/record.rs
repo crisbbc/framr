@@ -79,7 +79,7 @@ pub(crate) fn start_zkde_recording(
 
 	let manager: ZkdeScreencastUnstableV1 = globals.bind(&qh, 1..=4, ()).map_err(|_| {
 		anyhow!(
-			"KWin screencast protocol not available; run `framr config protocol` and re-login to authorize framr"
+			"KWin screencast protocol not available; run `framr config protocol` and re-login"
 		)
 	})?;
 

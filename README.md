@@ -158,7 +158,10 @@ framr config protocol
 ```
 
 > [!TIP]
-> On KDE Plasma, `framr config protocol` also authorizes FramR so it is able to capture screenshots and recordings. Run it once and re-login (or update your desktop database).
+> On KDE Plasma, run `framr config protocol` once to register the desktop file with the
+> `X-KDE-DBUS-Restricted-Interfaces` key that KWin needs for screen capture authorization.
+> The command also refreshes the KDE desktop cache automatically. If capture is still rejected
+> afterwards, re-logging will ensure KWin fully picks up the new permissions.
 
 ## Contributing
 

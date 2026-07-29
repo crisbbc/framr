@@ -602,21 +602,6 @@ pub fn register_protocol_handler() -> Result<()> {
 		}
 	}
 
-	if desktop_file_path.exists() {
-		let proceed = super::prompt_confirm(
-			&format!(
-				"Protocol handler already exists at {}. Overwrite?",
-				style(desktop_file_path.display()).blue()
-			),
-			false,
-		)?;
-
-		if !proceed {
-			println!("  {} Registration cancelled.", style("ℹ").blue().bold());
-			return Ok(());
-		}
-	}
-
 	let exe_path = std::env::current_exe()?;
 	let exe_str = exe_path
 		.to_str()
@@ -638,6 +623,7 @@ Type=Application
 Terminal=false
 MimeType=x-scheme-handler/framr;
 NoDisplay=true
+X-KDE-Protocols=wayland
 X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2
 X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1
 Comment=Handle framr:// deeplinks for importing uploaders
@@ -645,13 +631,48 @@ Comment=Handle framr:// deeplinks for importing uploaders
 		exe_str
 	);
 
-	std::fs::write(&desktop_file_path, content)?;
+	// Check if the existing file already has the correct content
+	if desktop_file_path.exists() {
+		if let Ok(existing) = std::fs::read_to_string(&desktop_file_path) {
+			if existing == content {
+				println!(
+					"  {} Protocol handler already correctly registered at {}",
+					style("✔").green().bold(),
+					style(desktop_file_path.display()).blue()
+				);
+				// Refresh KDE cache so KWin picks up the X-KDE-* keys from the
+				// desktop file.
+				println!("  {} Refreshing KDE desktop cache…", style("…").dim());
+				refresh_kde_cache();
+				return Ok(());
+			}
+		}
+
+		let proceed = super::prompt_confirm(
+			&format!(
+				"Protocol handler already exists at {}. Overwrite?",
+				style(desktop_file_path.display()).blue()
+			),
+			false,
+		)?;
+
+		if !proceed {
+			println!("  {} Registration cancelled.", style("ℹ").blue().bold());
+			return Ok(());
+		}
+	}
+
+	std::fs::write(&desktop_file_path, &content)?;
 
 	println!(
 		"  {} Protocol handler registered at {}",
 		style("✔").green().bold(),
 		style(desktop_file_path.display()).blue()
 	);
+
+	// Rebuild KDE's desktop file cache and notify KWin/kded of the change
+	println!("  {} Refreshing KDE desktop cache…", style("…").dim());
+	refresh_kde_cache();
 
 	match std::process::Command::new("update-desktop-database")
 		.arg(&apps_dir)
@@ -678,6 +699,65 @@ Comment=Handle framr:// deeplinks for importing uploaders
 	}
 
 	Ok(())
+}
+
+/// Best-effort attempt to refresh KDE's desktop file cache and notify
+/// KWin/kded of the new .desktop file so that authorization takes effect
+/// without requiring a full re-login.
+fn refresh_kde_cache() {
+	// kbuildsycoca6 rebuilds the KDE 6 system configuration cache,
+	// which includes desktop file indexing. kbuildsycoca5 is the KDE 5 fallback.
+	let mut kbuild_found = false;
+	for cmd in &["kbuildsycoca6", "kbuildsycoca5"] {
+		match std::process::Command::new(cmd)
+			.stdout(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null())
+			.status()
+		{
+			Ok(status) if status.success() => {
+				kbuild_found = true;
+				break;
+			}
+			Ok(_) => {}  // ran but failed, try next
+			Err(_) => {} // not found, try next
+		}
+	}
+	if !kbuild_found {
+		eprintln!(
+			"  {} kbuildsycoca not found or failed; KDE desktop cache may be stale.",
+			style("⚠").yellow().bold()
+		);
+	}
+
+	// Notify KWin to reload its configuration (picks up new X-KDE-* keys)
+	let _ = std::process::Command::new("dbus-send")
+		.args([
+			"--session",
+			"--type=method_call",
+			"--dest=org.kde.KWin",
+			"/KWin",
+			"org.kde.KWin.reconfigure",
+		])
+		.stdout(std::process::Stdio::null())
+		.stderr(std::process::Stdio::null())
+		.status();
+
+	// Notify kded to reload its modules (handles protocol/file associations).
+	// Try kded6 first, then kded5 as fallback.
+	for dest in &["org.kde.kded6", "org.kde.kded5"] {
+		let _ = std::process::Command::new("dbus-send")
+			.args([
+				"--session",
+				"--type=method_call",
+				"--dest",
+				dest,
+				"/kded",
+				&format!("{}.reconfigure", dest),
+			])
+			.stdout(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null())
+			.status();
+	}
 }
 
 pub fn run_config_wizard() -> Result<()> {

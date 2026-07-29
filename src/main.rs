@@ -20,6 +20,39 @@ use crate::utils::clipboard::{copy_file_uri, copy_to_clipboard};
 use crate::utils::notify::send_notification;
 
 fn main() -> std::process::ExitCode {
+	// Move into our own systemd scope so KWin can match us to
+	// framr.desktop for X-KDE-DBUS-Restricted-Interfaces authorization.
+	// This re-executes the process via systemd-run when launched from a
+	// terminal (Konsole, etc.). On success, exec() replaces the process
+	// image and we never return here.
+	if let Err(e) = utils::cgroup::ensure_systemd_cgroup() {
+		eprintln!("Warning: Could not set up systemd cgroup for KWin authorization.");
+		eprintln!("  {e}");
+		eprintln!("  Screen capture may be rejected. Try launching framr via the");
+		eprintln!("  application launcher (Kickoff/Krunner) instead of a terminal.");
+	}
+
+	// Nudge KWin to reload its configuration so it picks up framr.desktop
+	// even if the desktop cache is stale (e.g. kbuildsycoca hasn't run).
+	// This is a fast, best-effort D-Bus call — failures are silent.
+	// Only relevant on KDE, so skip the D-Bus timeout on other DEs.
+	if std::env::var("XDG_CURRENT_DESKTOP")
+		.map(|d| d.contains("KDE"))
+		.unwrap_or(false)
+	{
+		let _ = std::process::Command::new("dbus-send")
+			.args([
+				"--session",
+				"--type=method_call",
+				"--dest=org.kde.KWin",
+				"/KWin",
+				"org.kde.KWin.reconfigure",
+			])
+			.stdout(std::process::Stdio::null())
+			.stderr(std::process::Stdio::null())
+			.status();
+	}
+
 	sound::init_sound();
 	let cli = Cli::parse();
 	let silent = cli.silent;

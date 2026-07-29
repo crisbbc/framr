@@ -57,7 +57,20 @@ impl KdeBackend {
 
 		let write_fd = unsafe { arg::OwnedFd::new(write_pipe.into_raw_fd()) };
 		let dict =
-			capture_call(&proxy, write_fd).map_err(|e| anyhow!("KWin D-Bus call failed: {}", e))?;
+			capture_call(&proxy, write_fd).map_err(|e| {
+			let msg = format!("{e}");
+			let hint = if msg.contains("not authorized") || msg.contains("authoriz") {
+				"\n\nKWin rejected the request because it could not match this process \
+				 to framr.desktop. This usually happens when framr is launched from a \
+				 terminal (Konsole, etc.) instead of an application launcher.\n\
+				 Try launching framr via Kickoff/Krunner, or run:\n  \
+				 systemd-run --user --scope --unit=app-framr-$$ framr\n\
+				 If the problem persists, re-run `framr config protocol` and re-login."
+			} else {
+				""
+			};
+			anyhow!("KWin D-Bus call failed: {e}{hint}")
+		})?;
 
 		let raw_data = pipe_handle
 			.join()

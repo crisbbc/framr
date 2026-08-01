@@ -32,27 +32,6 @@ fn main() -> std::process::ExitCode {
 		eprintln!("  application launcher (Kickoff/Krunner) instead of a terminal.");
 	}
 
-	// Nudge KWin to reload its configuration so it picks up framr.desktop
-	// even if the desktop cache is stale (e.g. kbuildsycoca hasn't run).
-	// This is a fast, best-effort D-Bus call — failures are silent.
-	// Only relevant on KDE, so skip the D-Bus timeout on other DEs.
-	if std::env::var("XDG_CURRENT_DESKTOP")
-		.map(|d| d.contains("KDE"))
-		.unwrap_or(false)
-	{
-		let _ = std::process::Command::new("dbus-send")
-			.args([
-				"--session",
-				"--type=method_call",
-				"--dest=org.kde.KWin",
-				"/KWin",
-				"org.kde.KWin.reconfigure",
-			])
-			.stdout(std::process::Stdio::null())
-			.stderr(std::process::Stdio::null())
-			.status();
-	}
-
 	sound::init_sound();
 	let cli = Cli::parse();
 	let silent = cli.silent;

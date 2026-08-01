@@ -13,19 +13,16 @@ use std::process;
 /// transient scope via `systemd-run`, so KWin can correctly match it to
 /// `framr.desktop` and honour the X-KDE-DBUS-Restricted-Interfaces key.
 pub fn ensure_systemd_cgroup() -> Result<()> {
-	// Avoid infinite re-exec
-	if std::env::var("FRAMR_CGROUP_FIXED").is_ok() {
-		return Ok(());
-	}
-
 	// Read current cgroup to check if we're already properly scoped
 	let cgroup = match std::fs::read_to_string("/proc/self/cgroup") {
 		Ok(c) => c,
 		Err(_) => return Ok(()),
 	};
 
-	// Already in an app-framr-*.scope — nothing to do
-	if cgroup.contains("app-framr-") {
+	// Already in an app-framr-*.scope under app.slice — nothing to do.
+	// Checking the full hierarchy avoids trusting a manually-created scope
+	// with the right name but the wrong parent slice.
+	if cgroup.contains("/app.slice/app-framr-") {
 		return Ok(());
 	}
 
@@ -60,11 +57,12 @@ pub fn ensure_systemd_cgroup() -> Result<()> {
 	let err = process::Command::new("systemd-run")
 		.args([
 			"--user",
+			"--quiet",
 			"--scope",
 			"--unit",
 			&scope_name,
+			"--slice=app.slice",
 			"--same-dir",
-			"--setenv=FRAMR_CGROUP_FIXED=1",
 			"--",
 		])
 		.arg(&exe)
@@ -76,7 +74,8 @@ pub fn ensure_systemd_cgroup() -> Result<()> {
 		"Failed to re-execute framr in its own systemd scope for KWin \
          authorization. Try launching framr via the application launcher \
          instead of a terminal, or run:\n  \
-         systemd-run --user --scope --unit=app-framr-{pid} framr\n  \
+         systemd-run --user --quiet --scope --unit=app-framr-{pid} \
+         --slice=app.slice framr\n  \
          Error: {err}",
 	))
 }

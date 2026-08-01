@@ -64,7 +64,8 @@ impl KdeBackend {
 				 to framr.desktop. This usually happens when framr is launched from a \
 				 terminal (Konsole, etc.) instead of an application launcher.\n\
 				 Try launching framr via Kickoff/Krunner, or run:\n  \
-				 systemd-run --user --scope --unit=app-framr-$$ framr\n\
+				 systemd-run --user --quiet --scope --unit=app-framr-$$ \
+				 --slice=app.slice framr\n\
 				 If the problem persists, re-run `framr config protocol` and re-login."
 			} else {
 				""
